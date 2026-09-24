@@ -1,0 +1,23 @@
+{
+  "name": "typemonkey",
+  "version": "1.0.0",
+  "description": "A desktop typing exercise app similar to MonkeyType",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "mkdir -p dist && cp index.html dist/ && tauri build",
+    "dist": "mkdir -p dist && cp index.html dist/"
+  },
+  "keywords": [
+    "typing",
+    "exercise",
+    "monkeytype",
+    "tauri"
+  ],
+  "author": "Ayrris Aunario",
+  "license": "MIT",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "serve": "^14.2.6"
+  }
+}

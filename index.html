@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TypeMonkey</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TypeMonkey</h1>
+            <span class="status-bar" id="sourceStatus">loading words…</span>
+        </header>
+
+        <div class="stats">
+            <div><div class="stat-value" id="wpm">0</div><div class="stat-label">WPM</div></div>
+            <div><div class="stat-value" id="accuracy">100%</div><div class="stat-label">Accuracy</div></div>
+            <div><div class="stat-value" id="progress">0/<span id="totalWords">0</span></div><div class="stat-label">Progress</div></div>
+        </div>
+
+        <div id="viewport" class="loading">
+            <div id="words" class="loading">Loading word list…</div>
+            <div id="scrollPad"></div>
+        </div>
+
+        
+        <p id="hint">Just start typing to begin. Space = next word.</p>
+    </div>
+    <footer>
+        <button id="newTestBtn">New Test (Tab)</button>
+        <button id="restartBtn" class="ghost">Restart (Esc)</button>
+        <span style="flex:1"></span>
+        <div class="fontctl">
+            <button id="fontMinusBtn" class="ghost" title="Smaller text">Aa−</button>
+            <span id="fontLabel" class="status-bar">26px</span>
+            <button id="fontPlusBtn" class="ghost" title="Bigger text">Aa+</button>
+        </div>
+    </footer>
+
+    <!-- Results modal -->
+    <template id="resultTemplate">
+        <div data-modal style="position:fixed;inset:0;background:rgba(10,10,14,.7);display:flex;align-items:center;justify-content:center;">
+            <div id="results" class="show"
+                 style="background:#20202b;border-radius:16px;padding:3rem 4rem;text-align:center;max-width:90vw;">
+                <div style="font-size:1.6rem;color:var(--accent);margin-bottom:.5rem;">Test Complete!</div>
+                <div id="resultStats" style="display:flex;gap:3rem;justify-content:center;margin-top:1.2rem;"></div>
+            </div>
+        </div>
+    </template>
+
+    <!-- JavaScript moved to external file -->
+    <script src="main.js"></script>
+</body>
+</html>
