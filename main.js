@@ -289,6 +289,7 @@ const invalidateRest = word => {
 }
 
 function handleKey(e) {
+    if (e.repeat) return; // ignore auto-repeat (holding a key)
     if (e.key === 'Tab') { e.preventDefault(); newTest(); return; }
     if (e.key === 'Escape') {
         const modal = document.querySelector('[data-modal]');
@@ -428,7 +429,7 @@ function animateScrollTo(cont, targetY, dur) {
 
 document.getElementById('newTestBtn').addEventListener('click', newTest);
 document.getElementById('restartBtn').addEventListener('click', restartSame);
-window.addEventListener('keyup', handleKey);
+window.addEventListener('keydown', handleKey);
 document.body.setAttribute('tabindex', '0');
 document.body.focus();
 

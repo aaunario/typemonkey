@@ -2,6 +2,8 @@
 
 A fast, minimal typing trainer in the spirit of [MonkeyType](https://monkeytype.com) — built with [Tauri v2](https://tauri.app) and vanilla JS. No frameworks, no build step for the frontend, just words and a keyboard.
 
+![TypeMonkey screenshot](./screenshot.png)
+
 ## Features
 
 - ⚡ **Instant start** — just start typing; the timer begins on your first keystroke

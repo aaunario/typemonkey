@@ -60,12 +60,21 @@ const getRemoteWords = (count) => {
 
 function normalize(list, hardMode) {
     const lenRe = hardMode ? /^[a-z]{6,12}$/ : /^[a-z]{2,15}$/;
-    return list
-        .map(w => String(w).trim().toLowerCase())
-        .filter(w => lenRe.test(w))
-        // dedupe + shuffle
-        .filter((w, i, a) => w !== "don't" && a.indexOf(w) === i)
-        .sort(() => Math.random() - 0.5);
+    const seen = new Set();
+    const out = [];
+    for (const raw of list) {
+        const w = String(raw).trim().toLowerCase();
+        if (!lenRe.test(w) || w === "don't") continue;
+        if (seen.has(w)) continue;   // O(1) dedupe (was O(n²) via indexOf)
+        seen.add(w);
+        out.push(w);
+    }
+    // Fisher-Yates shuffle (unbiased, O(n))
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
 }
 
 const pickAndPost = () => {
