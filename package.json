@@ -5,8 +5,8 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "mkdir -p dist && cp index.html dist/ && tauri build",
-    "dist": "mkdir -p dist && cp index.html dist/"
+    "build": "npm run dist && tauri build",
+    "dist": "mkdir -p dist && cp index.html styles.css main.js worker.js remote-load-worker.js dist/"
   },
   "keywords": [
     "typing",

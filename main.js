@@ -36,6 +36,7 @@ const elViewport = document.getElementById('viewport');
 const elScrollPad = document.getElementById('scrollPad');
 const statusEl = document.getElementById('sourceStatus');
 
+
 let running = false;
 let finished = false;
 let startTime = null;
@@ -88,17 +89,13 @@ function fetchCachedWords(count) {
     } catch (_) { return []; }
 }
 
-function loadSettings() {
-    const { font_size } = JSON.parse(localStorage.getItem('tm_settings') || '{}');
-    setFont(font_size || FONT_MIN);
-}
-
-function storeSettings() {
+async function storeSettings() {
     const settings = { 
         ...JSON.parse(localStorage.getItem('tm_settings') || '{}'), 
         font_size: currentFont(),
         window_width: window.innerWidth,
-        window_height: window.innerHeight
+        window_height: window.innerHeight,
+        position: (await appWindow.outerPosition()).toJSON()
     };
     localStorage.setItem('tm_settings', JSON.stringify(settings));
 }
@@ -138,41 +135,49 @@ function newTest() {
 }
 
 const onWordsLoaded = () => {
-    statuses = words.map(w => new Array(w.length).fill('untyped'));
-    cursor = { w: 0, c: 0 };
-    animToCursor();
-    running = false;
-    finished = false;
-    startTime = null;
-    correctKeystrokes = 0;
-    totalKeystrokes = 0;
-    
-    statusEl.textContent = `loaded ${words.length} hard words`;
-
-    resetScroll();   // start from the top on a new test
+    statusEl.textContent = `loaded ${words.length} hard words`;    
     elTotal.textContent = words.length;
     [elViewport, elWords].map(el => el.classList).forEach(cl => {
         cl.remove('loading', 'empty');
         cl.add('word-mode');
     })
-
+    
+    resetTest();
     render();
 }
 
-function resetScroll() {
+const resetTest = () => {
+    const modal = document.querySelector('[data-modal]');
+    if (modal) modal.remove();
+    
+    statuses = words.map(w => new Array(w.length).fill('untyped'));
+    cursor = { w: 0, c: 0 };
+    running = false;
+    finished = false;
+    startTime = null;
+    correctKeystrokes = 0;
+    totalKeystrokes = 0;
+    resetScroll();
+}
+
+const resetScroll = () => {
     elViewport.scrollTop = 0;
     _anchorPrevY = null;   // re-establish baseline on the next render
 }
 
 // Keep the scroll buffer in sync with the viewport's current height
-function updateScrollPad() {
+const updateScrollPad = () => {
     const h = elViewport.getBoundingClientRect().height;
-    elScrollPad.style.paddingTop = `${h}px`;
+    elScrollPad.style.height = `${h}px`;
+    elScrollPad.style.top = elWords.style.bottom;
 }
 
 // ------------------------------------------------------------------
+const isPreviousWordAccessible = () => !!cursor.w && !isWordComplete(cursor.w - 1);
+const isWordComplete = (w) => statuses?.[w]?.every(status => status === 'correct');
 const isLastChar = (w, c) => (wordEnd(w) === c); 
-const wordEnd = (w) => (statuses[w].length - 1)
+const wordEnd = (w) => Math.abs((Number(words?.[w]?.length || 0) - 1));
+const isLastWord = w => !(words.length - 1 - w); 
 function flattenedLength() { let n = 0; for (const s of statuses) n += s.length; return n; }
 function allWordsComplete() { for (const s of statuses) if (!s.length || s.some(c => c !== 'correct')) return false; return true; }
 
@@ -264,11 +269,8 @@ function finish() {
 // ------------------------------------------------------------------
 function restartSame() {
     if (words.length === 0) return;
-    statuses = words.map(w => new Array(w.length).fill('untyped'));
-    cursor = { w: 0, c: 0 };
-    running = false; finished = false; startTime = null;
-    correctKeystrokes = 0; totalKeystrokes = 0;
-    resetScroll();
+
+    resetTest();
     render();
 }
 
@@ -276,24 +278,55 @@ const updateStatus = (w, c, status) => { statuses[w][c] = status; }
 const updateCursorStatus = status => {
     const {w, c} = cursor;  
     updateStatus(w, c, status);
+    render()
 }
-const cursorToWordEnd = () => { cursor.c = wordEnd(cursor.w); }
+const cursorToWordStart = () => {
+    cursor.c = 0;
+    animToCursor();
+}
+const cursorToWordEnd = () => { 
+    cursor.c = wordEnd(cursor.w); 
+    animToCursor();
+}
+const cursorToAdjacentWord = (advance) => {
+    const { w: word } = cursor;
+
+    if (!isPreviousWordAccessible() && !advance || isLastWord(word) && advance)
+        return;
+
+    const increment = Number(advance) - Number(!advance);
+    
+    cursor.w += increment;
+    if (advance) 
+        cursorToWordStart();
+    else
+        cursorToWordEnd();
+    animToCursor();
+}
+const cursorToAdjacentChar = (advance) => {
+    const { w: word, c: char } = cursor;
+    if (advance && isLastChar(word, char) || !advance && !char) {
+        cursorToAdjacentWord(advance); 
+    } else {
+        const increment = Number(advance) - Number(!advance);
+        cursor.c += increment;
+    }
+    animToCursor();
+}
 const animToCursor = () => { animTarget = Object.assign(animTarget || {}, cursor); } 
 const cursorStatus = () => statuses[cursor.w][cursor.c]
-const invalidateRest = word => {
-    statuses[word].forEach((_, idx) => {
-        if (cursor.c <= idx) updateStatus(word, idx, 'incorrect');
+
+const setRemainingStatuses = status => {
+    statuses?.[cursor.w]?.forEach((_, idx) => {
+        (cursor.c <= idx) && updateStatus(cursor.w, idx, status);
     });
-    cursorToWordEnd();
-    animToCursor();
+    render();
 }
 
 function handleKey(e) {
     if (e.repeat) return; // ignore auto-repeat (holding a key)
     if (e.key === 'Tab') { e.preventDefault(); newTest(); return; }
     if (e.key === 'Escape') {
-        const modal = document.querySelector('[data-modal]');
-        if (modal) modal.remove();
         restartSame();
         e.preventDefault();
         return;
@@ -303,38 +336,38 @@ function handleKey(e) {
     if (!running && !/^(Shift|Control|Alt|Meta)$/.test(e.key)) start();
     
     const { w: word, c: char } = cursor;
-    const isLastWord = cursor.w === words.length - 1;
 
+    // Move cursor back
     if (e.key === 'Backspace') {
         e.preventDefault();
         if (!running) { newTest(); return; }
-        updateCursorStatus('untyped')
-        if (!!char) {
-            cursor.c--;
-            updateCursorStatus('untyped');
-        } 
 
+        cursorToAdjacentChar(false);
+        setRemainingStatuses('untyped');        
         render();
         return;
     }
 
     if (!running || finished) return;
 
+    // Move cursor forward
     if (e.code === 'Space') {
         e.preventDefault();
         totalKeystrokes++;
 
+        // End of current word
         if (isLastChar(word, char)) {
             correctKeystrokes++;
-            if (!isLastWord) {
-                cursor.w++;
-                cursor.c = 0;
-            } else if (allWordsComplete()) {
+            if (allWordsComplete()) {
                 finish();
                 return;
+            } else {
+                cursorToAdjacentChar(true)
             }
         } else {
-            invalidateRest(word);
+            // Penalty for spacebar keypress in the middle of a word
+            setRemainingStatuses("incorrect");
+            cursorToWordEnd();
         }
         
        render();
@@ -345,13 +378,12 @@ function handleKey(e) {
         e.preventDefault();
         totalKeystrokes++;
         const expected = words[word][char];
-        const isCorrect = (e.key === expected);
-        updateCursorStatus(isCorrect ? 'correct' : 'incorrect');
-        isCorrect && correctKeystrokes++;
-        animToCursor();
+        const isCharCorrect = (e.key === expected);
+        updateCursorStatus(isCharCorrect ? 'correct' : 'incorrect');
+        isCharCorrect && correctKeystrokes++;
         if (!isLastChar(word, char)) {
-            cursor.c++;
-        } else if (isLastWord && isCorrect) {
+            cursorToAdjacentChar(true);
+        } else if (isLastWord(word) && isCharCorrect) {
             return finish();
         }
         
@@ -384,27 +416,28 @@ function anchorCaretLine() {
     const caretEl = elWords.querySelector('.letter.cursor');
     if (!caretEl) return;
 
-    const lineH = parseFloat(getComputedStyle(elWords).lineHeight);
-    const relTop =
-        caretEl.getBoundingClientRect().top +
-        elWords.getBoundingClientRect().top -
+    // Caret's position within the scrollable content (document-relative).
+    // This is stable for a given caret position regardless of the current
+    // scroll offset, so the delta below reflects only real line movement.
+    const caretDocTop =
+        caretEl.getBoundingClientRect().top -
         cont.getBoundingClientRect().top +
         cont.scrollTop;
 
     if (_anchorPrevY === null) {
-        _anchorPrevY = relTop;
+        _anchorPrevY = caretDocTop;
         return;
     }
 
-    const deltaRows = (relTop - _anchorPrevY) / lineH;
-    _anchorPrevY = relTop;
+    const delta = caretDocTop - _anchorPrevY;
+    _anchorPrevY = caretDocTop;
 
-    if (deltaRows > 0) {
-        const maxScroll = Math.max(0, cont.scrollHeight - cont.clientHeight);
-        // const targetY = Math.min(Math.max(cont.scrollTop + deltaRows * lineH, 0), maxScroll);
-        const targetY = cont.scrollTop + deltaRows * lineH;
-        animateScrollTo(cont, targetY, 420);
-    }
+    // Same row (or sub-pixel noise) — nothing to scroll.
+    if (Math.abs(delta) < 1) return;
+
+    // Shift the scroll by exactly the caret's movement so the active line
+    // stays pinned. Works for wrapping down and backspacing up a line.
+    animateScrollTo(cont, cont.scrollTop + delta, 420);
 }
 
 // Manual rAF tween so we can control the scroll duration (CSS smooth is fixed by
@@ -414,6 +447,7 @@ function animateScrollTo(cont, targetY, dur) {
     if (_scrollAnim) { cancelAnimationFrame(_scrollAnim); }
     const startY = cont.scrollTop;
     const diff = targetY - startY;
+    if (!diff) return;
     const t0 = performance.now();
     (function step(now) {
         const p = Math.min(1, (now - t0) / dur);
@@ -434,37 +468,48 @@ document.body.setAttribute('tabindex', '0');
 document.body.focus();
 
 // ------------------------------------------------------------------
-// Window resize handling: persist dimensions (localStorage) + adjust scroll
-// const isTauri = typeof window.__TAURI__ !== 'undefined' && !!window.__TAURI__.core;
+// Window re-size/position handling: persist dimensions + physical/outer position (localStorage) + adjust scroll
+let _settingsUpdateDebounce = null;
+const debounceSettingsUpdate = () => {
+    // Debounce the persistence (writes to localStorage via storeSettings)
+    clearTimeout(_settingsUpdateDebounce);
+    _settingsUpdateDebounce = setTimeout(storeSettings, 500);
+}
 
-let _resizeDebounce = null;
+
 function onWindowResize() {
     // Re-anchor the caret line so the active row stays pinned
     _anchorPrevY = null;
     updateScrollPad();
     if (words.length) render();
-
-    // Debounce the persistence (writes to localStorage via storeSettings)
-    clearTimeout(_resizeDebounce);
-    _resizeDebounce = setTimeout(storeSettings, 500);
+    debounceSettingsUpdate();
 }
 
-// Apply the saved window size to the Tauri window on boot
-async function restoreWindowDimensions() {
-    if (!window.isTauri) return;
+const appWindow = window.isTauri && window.__TAURI__.window?.getCurrentWindow();
+appWindow?.onMoved(({payload: position}) => {
+    debounceSettingsUpdate();
+})
+
+// Apply the saved window size/position to the Tauri window on boot
+async function restoreSettings() {
+    const { font_size, window_width, window_height, position } = JSON.parse(localStorage.getItem('tm_settings') || '{}');
+    setFont(font_size);
+
+    if (!appWindow) return;
+
     try {
-        const { window_width, window_height } = JSON.parse(localStorage.getItem('tm_settings') || '{}');
+        const { LogicalSize, PhysicalPosition } = window.__TAURI__.dpi;
         if (window_width && window_height) {
-            const { getCurrentWindow } = window.__TAURI__.window;
-            const { LogicalSize } = window.__TAURI__.dpi;
-            const win = getCurrentWindow();
-            // Saved from window.innerWidth/Height (logical px) → LogicalSize
-            await win.setSize(new LogicalSize(window_width, window_height));
+            await appWindow.setSize(new LogicalSize(window_width, window_height));
+        }
+        if (position) {
+            await appWindow.setPosition(new PhysicalPosition(position));
         }
     } catch (e) {
         console.warn('main: failed to restore window size', e);
     }
 }
+
 
 // Observe the viewport so scroll content adjusts on any size change
 const resizeObserver = new ResizeObserver(() => onWindowResize());
@@ -476,7 +521,6 @@ window.addEventListener('resize', onWindowResize);
 
 // Boot
 (async function init() {
-    await restoreWindowDimensions();
-    loadSettings();
+    await restoreSettings();
     newTest();
 })();
