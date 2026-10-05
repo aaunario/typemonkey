@@ -130,7 +130,7 @@ function loadWordList() {
 }
 
 function newTest() {
-    animTarget = null;
+    disableCursorAnim()
     loadWordList();
 }
 
@@ -144,6 +144,7 @@ const onWordsLoaded = () => {
     
     resetTest();
     render();
+    updateScrollPad();
 }
 
 const resetTest = () => {
@@ -177,9 +178,9 @@ const isPreviousWordAccessible = () => !!cursor.w && !isWordComplete(cursor.w - 
 const isWordComplete = (w) => statuses?.[w]?.every(status => status === 'correct');
 const isLastChar = (w, c) => (wordEnd(w) === c); 
 const wordEnd = (w) => Math.abs((Number(words?.[w]?.length || 0) - 1));
-const isLastWord = w => !(words.length - 1 - w); 
+const isLastWord = w => words.length - 1 <= w; 
 function flattenedLength() { let n = 0; for (const s of statuses) n += s.length; return n; }
-function allWordsComplete() { for (const s of statuses) if (!s.length || s.some(c => c !== 'correct')) return false; return true; }
+const allWordsComplete = () => isLastWord(cursor.w) && isLastChar(cursor.w, cursor.c)
 
 function cursorIndex() {
     let n = 0;
@@ -212,24 +213,21 @@ function render() {
         }
         html += '</span>';
     }
-    animTarget = null;
+    disableCursorAnim()
     elWords.innerHTML = html;
-
-    // Adjust scroll buffer height
-    updateScrollPad();
-
+    
     if (running && startTime) {
         const mins = ((Date.now() - startTime)) / 60000;
         const wpm = mins > 0 ? Math.round((correctKeystrokes / 5) / mins) : 0;
         elWpm.textContent = wpm;
     }
     const acc = totalKeystrokes > 0
-        ? Math.round((correctKeystrokes / totalKeystrokes) * 100)
-        : 100;
+    ? Math.round((correctKeystrokes / totalKeystrokes) * 100)
+    : 100;
     elAcc.textContent = acc + '%';
     const doneWords = cursor.w;
     elProg.innerHTML = `${doneWords}<span id="totalWords">/${words.length}</span>`;
-
+    
     anchorCaretLine();
 }
 
@@ -274,6 +272,12 @@ function restartSame() {
     render();
 }
 
+const isTestComplete = () => (
+    isLastWord(cursor.w) 
+    && isLastChar(cursor.w, cursor.c)
+    && cursorStatus() !== 'untyped'
+)
+
 const updateStatus = (w, c, status) => { statuses[w][c] = status; }
 const updateCursorStatus = status => {
     const {w, c} = cursor;  
@@ -282,45 +286,59 @@ const updateCursorStatus = status => {
 }
 const cursorToWordStart = () => {
     cursor.c = 0;
-    animToCursor();
 }
 const cursorToWordEnd = () => { 
-    cursor.c = wordEnd(cursor.w); 
-    animToCursor();
+    cursor.c = wordEnd(cursor.w);
 }
+
+// Called only on Backspace or Space key press
 const cursorToAdjacentWord = (advance) => {
+    disableCursorAnim();
     const { w: word } = cursor;
 
-    if (!isPreviousWordAccessible() && !advance || isLastWord(word) && advance)
+    if (advance && isLastWord(word)) // Finish session if on last word moving to the next 
+        return finish();
+    else if (!advance && !isPreviousWordAccessible()) // Disable move to previous word if not allowed
         return;
 
     const increment = Number(advance) - Number(!advance);
-    
     cursor.w += increment;
-    if (advance) 
+
+    if (advance) {
         cursorToWordStart();
-    else
+    } else
         cursorToWordEnd();
-    animToCursor();
+    render();
 }
+
+// This is called only by Backspace and non-space key presses
 const cursorToAdjacentChar = (advance) => {
     const { w: word, c: char } = cursor;
-    if (advance && isLastChar(word, char) || !advance && !char) {
-        cursorToAdjacentWord(advance); 
-    } else {
-        const increment = Number(advance) - Number(!advance);
-        cursor.c += increment;
-    }
-    animToCursor();
+
+    // Exit early on special cases (end of test, end of word, etc.)
+    if (advance) {
+        animToCursor();  // Animate only char-advance event 
+        if (isLastChar(word, char)) {
+            return isLastWord(word)
+                ? finish()
+                : null; 
+        }
+    } else if (!char) 
+        return cursorToAdjacentWord(advance );
+    
+    cursor.c += Number(advance) - Number(!advance);
+    !advance && setRemainingStatuses('untyped'); // Clear previously-typed char status on Backspace press 
+    render();
 }
+
+const disableCursorAnim = () => { animTarget = null; };
 const animToCursor = () => { animTarget = Object.assign(animTarget || {}, cursor); } 
-const cursorStatus = () => statuses[cursor.w][cursor.c]
+const cursorStatus = () => statuses?.[cursor.w]?.[cursor.c]
 
 const setRemainingStatuses = status => {
     statuses?.[cursor.w]?.forEach((_, idx) => {
         (cursor.c <= idx) && updateStatus(cursor.w, idx, status);
     });
-    render();
 }
 
 function handleKey(e) {
@@ -337,41 +355,32 @@ function handleKey(e) {
     
     const { w: word, c: char } = cursor;
 
-    // Move cursor back
+    // Move cursor back to previous char/word
     if (e.key === 'Backspace') {
         e.preventDefault();
         if (!running) { newTest(); return; }
 
         cursorToAdjacentChar(false);
-        setRemainingStatuses('untyped');        
-        render();
         return;
     }
 
     if (!running || finished) return;
 
-    // Move cursor forward
+    // Move cursor forward to next word
     if (e.code === 'Space') {
         e.preventDefault();
         totalKeystrokes++;
+        const isCorrect = isLastChar(word, char) && cursorStatus() === 'correct'
 
-        // End of current word
-        if (isLastChar(word, char)) {
+        if (isCorrect)
             correctKeystrokes++;
-            if (allWordsComplete()) {
-                finish();
-                return;
-            } else {
-                cursorToAdjacentChar(true)
-            }
-        } else {
-            // Penalty for spacebar keypress in the middle of a word
-            setRemainingStatuses("incorrect");
-            cursorToWordEnd();
+        else {
+            disableCursorAnim();
+            setRemainingStatuses('incorrect');
         }
-        
-       render();
-       return;
+
+        cursorToAdjacentWord(true);        
+        return;
     }
 
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -379,15 +388,12 @@ function handleKey(e) {
         totalKeystrokes++;
         const expected = words[word][char];
         const isCharCorrect = (e.key === expected);
-        updateCursorStatus(isCharCorrect ? 'correct' : 'incorrect');
+        updateCursorStatus(isCharCorrect 
+            ? 'correct'
+            : 'incorrect'
+        );
         isCharCorrect && correctKeystrokes++;
-        if (!isLastChar(word, char)) {
-            cursorToAdjacentChar(true);
-        } else if (isLastWord(word) && isCharCorrect) {
-            return finish();
-        }
-        
-        render();
+        cursorToAdjacentChar(true);
     }
 }
 
