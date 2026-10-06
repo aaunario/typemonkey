@@ -67,7 +67,10 @@ loadWorker.onmessage = (e) => {
             break;
         case 'onFetch':
             // Word list received from worker
-            words = result;
+            words = result.map((word, idx) => word + (idx < result.length - 1 
+                ? ' '
+                : '')
+            );
             console.log(`main: loadWorker fetched ${words.length}`);
             onWordsLoaded();
     }
@@ -175,7 +178,8 @@ const updateScrollPad = () => {
 
 // ------------------------------------------------------------------
 const isPreviousWordAccessible = () => !!cursor.w && !isWordComplete(cursor.w - 1);
-const isWordComplete = (w) => statuses?.[w]?.every(status => status === 'correct');
+const isWordComplete = (w) => statuses?.[w]?.every((status, c) => isLastChar(w, c) || status === 'correct');
+const isFirstChar = c => !c
 const isLastChar = (w, c) => (wordEnd(w) === c); 
 const wordEnd = (w) => Math.abs((Number(words?.[w]?.length || 0) - 1));
 const isLastWord = w => words.length - 1 <= w; 
@@ -195,19 +199,20 @@ function cursorIndex() {
 function render() {
     let html = '';
     const anim = animTarget;
+    const {w: word, c: char} = cursor;
     for (let w = 0; w < words.length; w++) {
         html += `<span class="word" data-w="${w}">`;
         for (let c = 0; c < statuses[w].length; c++) {
             const cls = statuses[w][c];
             const isFresh = anim?.w === w && anim?.c === c;
-            const isCursor = !finished && cursor.w === w && cursor.c === c;
+            const isCursor = !finished && word === w && char === c && !isLastChar(word, char);
             const classList = [
                 "letter",
                 (cls !== 'untyped') && cls,
                 isFresh && 'just-typed',
                 isCursor && 'cursor',
                 isLastChar(w, c) && 'last-char',
-                !c && 'first-char'
+                isFirstChar(c) && 'first-char'
             ].filter(Boolean);
             html += `<span class="${classList.join(' ')}">${words[w][c]}</span>`;
         }
@@ -315,16 +320,16 @@ const cursorToAdjacentWord = (advance) => {
 const cursorToAdjacentChar = (advance) => {
     const { w: word, c: char } = cursor;
 
-    // Exit early on special cases (end of test, end of word, etc.)
+    // Exit early on special cases (end of test, end/start of word)
     if (advance) {
         animToCursor();  // Animate only char-advance event 
         if (isLastChar(word, char)) {
             return isLastWord(word)
                 ? finish()
-                : null; 
+                : cursorToAdjacentWord(true);
         }
-    } else if (!char) 
-        return cursorToAdjacentWord(advance );
+    } else if (isFirstChar(char)) 
+        return cursorToAdjacentWord(false);
     
     cursor.c += Number(advance) - Number(!advance);
     !advance && setRemainingStatuses('untyped'); // Clear previously-typed char status on Backspace press 
@@ -360,8 +365,7 @@ function handleKey(e) {
         e.preventDefault();
         if (!running) { newTest(); return; }
 
-        cursorToAdjacentChar(false);
-        return;
+        return cursorToAdjacentChar(false);
     }
 
     if (!running || finished) return;
@@ -379,8 +383,7 @@ function handleKey(e) {
             setRemainingStatuses('incorrect');
         }
 
-        cursorToAdjacentWord(true);        
-        return;
+        return cursorToAdjacentWord(true);        
     }
 
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {

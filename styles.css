@@ -109,7 +109,7 @@ span.letter.incorrect {
 
 span.letter.just-typed.correct, span.letter.just-typed.incorrect {
     clip-path: inset(0 100% 0 0);
-    animation: wipe .4s ease-out forwards;
+    animation: wipe .3s ease-out forwards;
 }
 
 @keyframes wipe {
